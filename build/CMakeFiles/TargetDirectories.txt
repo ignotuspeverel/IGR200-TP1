@@ -1,0 +1,3 @@
+/mnt/d/slam/postgraduate/gde1smt1/CG/telecom/TP1/build/CMakeFiles/rebuild_cache.dir
+/mnt/d/slam/postgraduate/gde1smt1/CG/telecom/TP1/build/CMakeFiles/tpOpenGL.dir
+/mnt/d/slam/postgraduate/gde1smt1/CG/telecom/TP1/build/CMakeFiles/edit_cache.dir

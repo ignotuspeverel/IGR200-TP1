@@ -1,0 +1,1 @@
+/usr/bin/c++     CMakeFiles/tpOpenGL.dir/glad/src/glad.c.o CMakeFiles/tpOpenGL.dir/main.cpp.o  -o tpOpenGL  /usr/local/lib/libglfw3.a /usr/lib/x86_64-linux-gnu/librt.so -lm -ldl /usr/lib/x86_64-linux-gnu/libX11.so -lpthread 
