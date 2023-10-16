@@ -59,7 +59,7 @@ public:
 
     inline glm::mat4 computeViewMatrix() const
     {
-        return glm::lookAt(m_pos, glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+        return glm::lookAt(m_pos, glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
     }
 
     // Returns the projection matrix stemming from the camera intrinsic parameter.
@@ -76,6 +76,98 @@ private:
     float m_far = 10.f;        // Distance after which the geometry is excluded from the rasterization process
 };
 Camera g_camera;
+
+class Mesh {
+public:
+    // init gpu program and geometry for the mesh
+    void init() {
+        // vao of the mesh
+        glGenVertexArrays(1, &m_vao);
+        glBindVertexArray(m_vao);
+
+        //vbo of the mesh
+        size_t vertexBufferSize = sizeof(float) * m_vertexPositions.size();
+        size_t normalBufferSize = sizeof(float) * m_vertexNormals.size();
+        glGenBuffers(1, &m_posVbo);
+        glBindBuffer(GL_ARRAY_BUFFER, m_posVbo);
+        glBufferData(GL_ARRAY_BUFFER, vertexBufferSize, m_vertexPositions.data(), GL_DYNAMIC_READ);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0);
+        glEnableVertexAttribArray(0);
+
+        glGenBuffers(1, &m_normalVbo);
+        glBindBuffer(GL_ARRAY_BUFFER, m_normalVbo);
+        glBufferData(GL_ARRAY_BUFFER, normalBufferSize, m_vertexNormals.data(), GL_DYNAMIC_READ);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), 0);
+        glEnableVertexAttribArray(1);
+
+        //ibo of the mesh
+        size_t indexBufferSize = sizeof(unsigned int) * m_triangleIndices.size();
+        glGenBuffers(1, &m_ibo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ibo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexBufferSize, m_triangleIndices.data(), GL_DYNAMIC_READ);
+
+        glBindVertexArray(0); // deactivate the VAO for now, will be activated again when rendering
+    }; // should properly set up the geometry buffer
+    // render the mesh
+    void render() {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        const glm::mat4 viewMatrix = g_camera.computeViewMatrix();
+        const glm::mat4 projMatrix = g_camera.computeProjectionMatrix();
+
+        glUniformMatrix4fv(glGetUniformLocation(g_program, "viewMat"), 1, GL_FALSE, glm::value_ptr(viewMatrix)); 
+        glUniformMatrix4fv(glGetUniformLocation(g_program, "projMat"), 1, GL_FALSE, glm::value_ptr(projMatrix));
+
+        glBindVertexArray(m_vao);
+        glDrawElements(GL_TRIANGLES, m_triangleIndices.size(), GL_UNSIGNED_INT, 0);
+    }; // should be called in the main rendering loop
+    // generate a unit sphere, create the buffer
+    static std::shared_ptr<Mesh> genSphere(const size_t resolution=16) {
+        std::shared_ptr<Mesh> mesh = std::make_shared<Mesh>();
+        const float pi = glm::pi<float>();
+        const float pi2 = pi * 2.f;
+        const float step_phi = pi / resolution;
+        const float step_theta = pi2 / resolution;
+        for (size_t i = 0; i <= resolution; i++) {
+            float phi = step_phi * float(i);
+            for (size_t j = 0; j <= resolution; j++) {
+                float theta = step_theta * float(j);
+                float x = std::sin(phi) * std::cos(theta);
+                float y = std::sin(phi) * std::sin(theta);
+                float z = std::cos(phi);
+                mesh->m_vertexPositions.push_back(x);
+                mesh->m_vertexPositions.push_back(y);
+                mesh->m_vertexPositions.push_back(z);
+                mesh->m_vertexNormals.push_back(x);
+                mesh->m_vertexNormals.push_back(y);
+                mesh->m_vertexNormals.push_back(z);
+            }
+        }
+        for (size_t i = 0; i < resolution; i++) {
+            for (size_t j = 0; j < resolution; j++) {
+                mesh->m_triangleIndices.push_back(i * (resolution+1) + j);
+                mesh->m_triangleIndices.push_back(i * (resolution+1) + j + 1);
+                mesh->m_triangleIndices.push_back((i + 1) * (resolution+1) + j);
+                mesh->m_triangleIndices.push_back((i + 1) * (resolution+1) + j);
+                mesh->m_triangleIndices.push_back(i * (resolution+1) + j + 1);
+                mesh->m_triangleIndices.push_back((i + 1) * (resolution+1) + j + 1);
+            }
+        }
+        std::cout << "sphere generated" << std::endl;
+        return mesh;
+    }; 
+// ...
+private:
+    std::vector<float> m_vertexPositions;
+    std::vector<float> m_vertexNormals;
+    std::vector<unsigned int> m_triangleIndices;
+    GLuint m_vao = 0;
+    GLuint m_posVbo = 0;
+    GLuint m_normalVbo = 0;
+    GLuint m_ibo = 0;
+// ...
+};
+
 
 GLuint loadTextureFromFileToGPU(const std::string &filename)
 {
@@ -122,6 +214,7 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     }
 }
 
+// Executed each time when an error occurs.
 void errorCallback(int error, const char *desc)
 {
     std::cout << "Error " << error << ": " << desc << std::endl;
@@ -204,8 +297,6 @@ void loadShader(GLuint program, GLenum type, const std::string &shaderFilename)
 {
     GLuint shader = glCreateShader(type);                                    // Create the shader, e.g., a vertex shader to be applied to every single vertex of a mesh
     std::string shaderSourceString = file2String(shaderFilename);            // Loads the shader source from a file to a C++ string
-    // std::cout << "Debug: Reading shader file." << std::endl;
-    // std::cout << shaderSourceString << std::endl;
     const GLchar *shaderSource = (const GLchar *)shaderSourceString.c_str(); // Interface the C++ string through a C pointer
     glShaderSource(shader, 1, &shaderSource, NULL);                          // load the vertex shader code
     glCompileShader(shader);
@@ -307,7 +398,7 @@ void initCamera()
     glfwGetWindowSize(g_window, &width, &height);
     g_camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
 
-    g_camera.setPosition(glm::vec3(0.0, 0.0, 3.0));
+    g_camera.setPosition(glm::vec3(3.0, 0.0, 0.0));
     g_camera.setNear(0.1);
     g_camera.setFar(80.1);
 }
@@ -322,10 +413,17 @@ void init()
     initCamera();
 }
 
+void initSphere()
+{
+    initGLFW();
+    initOpenGL();
+    std::shared_ptr<Mesh> sphere = Mesh::genSphere(16);
+    initCamera();
+}
+
 void clear()
 {
     glDeleteProgram(g_program);
-
     glfwDestroyWindow(g_window);
     glfwTerminate();
 }
@@ -352,12 +450,20 @@ void update(const float currentTimeInSec)
 }
 
 int main(int argc, char **argv)
-{
-    init(); // Your initialization code (user interface, OpenGL states, scene with geometry, material, lights, etc)
+{   
+    // mesh init
+    initGLFW();
+    initOpenGL();
+    std::shared_ptr<Mesh> sphere = Mesh::genSphere(16);
+    initGPUprogram();
+    sphere->init();
+    initCamera();
+    //init(); // Your initialization code (user interface, OpenGL states, scene with geometry, material, lights, etc)
     while (!glfwWindowShouldClose(g_window))
     {
-        update(static_cast<float>(glfwGetTime()));
-        render();
+        //update(static_cast<float>(glfwGetTime()));
+        //render();
+        sphere->render();
         glfwSwapBuffers(g_window);
         glfwPollEvents();
     }
