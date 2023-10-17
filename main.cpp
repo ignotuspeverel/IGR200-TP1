@@ -79,7 +79,7 @@ Camera g_camera;
 
 class Mesh {
 public:
-    // init gpu program and geometry for the mesh
+    // load gpu geometry for the mesh, with this step we initialize the final mesh
     void init() {
         // vao of the mesh
         glGenVertexArrays(1, &m_vao);
@@ -114,9 +114,11 @@ public:
 
         const glm::mat4 viewMatrix = g_camera.computeViewMatrix();
         const glm::mat4 projMatrix = g_camera.computeProjectionMatrix();
+        const glm::vec3 camPosition = g_camera.getPosition();
 
         glUniformMatrix4fv(glGetUniformLocation(g_program, "viewMat"), 1, GL_FALSE, glm::value_ptr(viewMatrix)); 
         glUniformMatrix4fv(glGetUniformLocation(g_program, "projMat"), 1, GL_FALSE, glm::value_ptr(projMatrix));
+        glUniform3f(glGetUniformLocation(g_program, "camPos"), camPosition[0], camPosition[1], camPosition[2]);
 
         glBindVertexArray(m_vao);
         glDrawElements(GL_TRIANGLES, m_triangleIndices.size(), GL_UNSIGNED_INT, 0);
@@ -145,18 +147,18 @@ public:
         }
         for (size_t i = 0; i < resolution; i++) {
             for (size_t j = 0; j < resolution; j++) {
+                mesh->m_triangleIndices.push_back(i * (resolution+1) + j + 1);
                 mesh->m_triangleIndices.push_back(i * (resolution+1) + j);
-                mesh->m_triangleIndices.push_back(i * (resolution+1) + j + 1);
+                mesh->m_triangleIndices.push_back((i + 1) * (resolution+1) + (j + 1));
+                mesh->m_triangleIndices.push_back((i + 1) * (resolution+1) + (j + 1));
+                mesh->m_triangleIndices.push_back(i * (resolution+1) + j);
                 mesh->m_triangleIndices.push_back((i + 1) * (resolution+1) + j);
-                mesh->m_triangleIndices.push_back((i + 1) * (resolution+1) + j);
-                mesh->m_triangleIndices.push_back(i * (resolution+1) + j + 1);
-                mesh->m_triangleIndices.push_back((i + 1) * (resolution+1) + j + 1);
             }
         }
         std::cout << "sphere generated" << std::endl;
         return mesh;
     }; 
-// ...
+
 private:
     std::vector<float> m_vertexPositions;
     std::vector<float> m_vertexNormals;
@@ -165,7 +167,6 @@ private:
     GLuint m_posVbo = 0;
     GLuint m_normalVbo = 0;
     GLuint m_ibo = 0;
-// ...
 };
 
 
@@ -400,7 +401,7 @@ void initCamera()
 
     g_camera.setPosition(glm::vec3(3.0, 0.0, 0.0));
     g_camera.setNear(0.1);
-    g_camera.setFar(80.1);
+    g_camera.setFar(40.1);
 }
 
 void init()
@@ -413,12 +414,15 @@ void init()
     initCamera();
 }
 
-void initSphere()
+std::shared_ptr<Mesh> initSphere()
 {
     initGLFW();
     initOpenGL();
-    std::shared_ptr<Mesh> sphere = Mesh::genSphere(16);
+    std::shared_ptr<Mesh> sphere = Mesh::genSphere(32);
+    initGPUprogram();
+    sphere->init();
     initCamera();
+    return sphere;
 }
 
 void clear()
@@ -452,12 +456,7 @@ void update(const float currentTimeInSec)
 int main(int argc, char **argv)
 {   
     // mesh init
-    initGLFW();
-    initOpenGL();
-    std::shared_ptr<Mesh> sphere = Mesh::genSphere(16);
-    initGPUprogram();
-    sphere->init();
-    initCamera();
+    std::shared_ptr<Mesh> sphere = initSphere();
     //init(); // Your initialization code (user interface, OpenGL states, scene with geometry, material, lights, etc)
     while (!glfwWindowShouldClose(g_window))
     {
