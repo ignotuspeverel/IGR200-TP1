@@ -42,6 +42,7 @@ std::vector<unsigned int> g_triangleIndices;
 // All vertex colors packed in one array [r0, g0, b0, r1, g1, b1, ...]
 std::vector<float> g_vertexColors;
 
+
 // Basic camera model
 class Camera
 {
@@ -59,7 +60,7 @@ public:
 
     inline glm::mat4 computeViewMatrix() const
     {
-        return glm::lookAt(m_pos, glm::vec3(0, 0, 0), glm::vec3(0, 0, 1));
+        return glm::lookAt(m_pos, glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
     }
 
     // Returns the projection matrix stemming from the camera intrinsic parameter.
@@ -79,6 +80,32 @@ Camera g_camera;
 
 class Mesh {
 public:
+    inline float getRadius() const { return radius; }
+    inline void setRadius(const float r) { 
+        radius = r; 
+        for (size_t i = 0; i < m_vertexPositions.size(); i+=3) {
+            m_vertexPositions[i] *= radius;
+            m_vertexPositions[i+1] *= radius;
+            m_vertexPositions[i+2] *= radius;
+        }
+        for (size_t i = 0; i < m_vertexNormals.size(); i+=3) {
+            m_vertexNormals[i] *= radius;
+            m_vertexNormals[i+1] *= radius;
+            m_vertexNormals[i+2] *= radius;
+        }
+        this->init();
+        std::cout << "reset radius to " << r << std::endl;
+    };
+    inline glm::vec3 getColor() { return color; };
+    inline void setColor(const glm::vec3 &c) { 
+        color = c; 
+        std::cout << "reset color to (" << c.x << ", " << c.y << ", " << c.z << ")" << std::endl;
+    };
+    inline glm::vec3 getLightPos() { return lightPos; };
+    inline void setLightPos(const glm::vec3 &lp) { 
+        lightPos = lp; 
+        std::cout << "reset light position to (" << lp.x << ", " << lp.y << ", " << lp.z << ")" << std::endl;
+    };
     // load gpu geometry for the mesh, with this step we initialize the final mesh
     void init() {
         // vao of the mesh
@@ -108,23 +135,34 @@ public:
 
         glBindVertexArray(0); // deactivate the VAO for now, will be activated again when rendering
     }; // should properly set up the geometry buffer
+
+    void setposition(const glm::vec3 &p, const std::shared_ptr<Mesh> &parent = nullptr) {
+        if (parent != nullptr) { position = parent->getposition() + p; }
+        else { position = p; }
+    }
+    glm::vec3 getposition() { return position; }   
     // render the mesh
     void render() {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
         const glm::mat4 viewMatrix = g_camera.computeViewMatrix();
         const glm::mat4 projMatrix = g_camera.computeProjectionMatrix();
         const glm::vec3 camPosition = g_camera.getPosition();
+        const glm::vec3 surfaceColor = this->getColor();
+        const glm::vec3 lightPosition = this->getLightPos();
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        modelMatrix = glm::translate(modelMatrix, this->getposition());
 
+        glUniformMatrix4fv(glGetUniformLocation(g_program, "modelMat"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
         glUniformMatrix4fv(glGetUniformLocation(g_program, "viewMat"), 1, GL_FALSE, glm::value_ptr(viewMatrix)); 
         glUniformMatrix4fv(glGetUniformLocation(g_program, "projMat"), 1, GL_FALSE, glm::value_ptr(projMatrix));
         glUniform3f(glGetUniformLocation(g_program, "camPos"), camPosition[0], camPosition[1], camPosition[2]);
+        glUniform3f(glGetUniformLocation(g_program, "surfaceColor"), surfaceColor[0], surfaceColor[1], surfaceColor[2]);
+        glUniform3f(glGetUniformLocation(g_program, "lightPos"), lightPosition[0], lightPosition[1], lightPosition[2]);
 
         glBindVertexArray(m_vao);
         glDrawElements(GL_TRIANGLES, m_triangleIndices.size(), GL_UNSIGNED_INT, 0);
     }; // should be called in the main rendering loop
     // generate a unit sphere, create the buffer
-    static std::shared_ptr<Mesh> genSphere(const size_t resolution=16) {
+    static std::shared_ptr<Mesh> genSphere(const size_t resolution=16, const float radius=1.f) {
         std::shared_ptr<Mesh> mesh = std::make_shared<Mesh>();
         const float pi = glm::pi<float>();
         const float pi2 = pi * 2.f;
@@ -167,7 +205,12 @@ private:
     GLuint m_posVbo = 0;
     GLuint m_normalVbo = 0;
     GLuint m_ibo = 0;
+    float radius = 1.f;
+    glm::vec3 position = glm::vec3(0.f, 0.f, 0.f);
+    glm::vec3 color = glm::vec3(0.f, 0.f, 0.f);
+    glm::vec3 lightPos = glm::vec3(0.f, 0.f, 0.f);
 };
+std::vector<std::shared_ptr<Mesh>> meshes;
 
 
 GLuint loadTextureFromFileToGPU(const std::string &filename)
@@ -399,31 +442,41 @@ void initCamera()
     glfwGetWindowSize(g_window, &width, &height);
     g_camera.setAspectRatio(static_cast<float>(width) / static_cast<float>(height));
 
-    g_camera.setPosition(glm::vec3(3.0, 0.0, 0.0));
+    g_camera.setPosition(glm::vec3(0.0, 0.0, 30.0));
     g_camera.setNear(0.1);
-    g_camera.setFar(40.1);
+    g_camera.setFar(80.1);
 }
 
 void init()
 {
     initGLFW();
-    initOpenGL();
-    initCPUgeometry();
+    initOpenGL(); 
+    // mesh init
+    std::shared_ptr<Mesh> Earth = Mesh::genSphere(32);
     initGPUprogram();
-    initGPUgeometry();
+    Earth->init();
+    Earth->setRadius(kSizeEarth);
+    Earth->setposition(glm::vec3(10.0f, 0.0f, 0.0f));
+    Earth->setColor(glm::vec3(0.0f, 1.0f, 0.0f));
+    meshes.push_back(Earth);
+    
+    std::shared_ptr<Mesh> Moon = Mesh::genSphere(32);
+    Moon->init();
+    Moon->setRadius(kSizeMoon);
+    Moon->setposition(glm::vec3(2.0f, 0.0f, 0.0f), Earth);
+    Moon->setColor(glm::vec3(0.0f, 0.0f, 1.0f));
+    meshes.push_back(Moon);
+
+    std::shared_ptr<Mesh> Sun = Mesh::genSphere(32);
+    Sun->init();
+    Sun->setRadius(kSizeSun);
+    Sun->setposition(glm::vec3(0.0f, 0.0f, 0.0f));
+    Sun->setColor(glm::vec3(1.0f, 1.0f, 0.0f));
+    meshes.push_back(Sun);
+
     initCamera();
 }
 
-std::shared_ptr<Mesh> initSphere()
-{
-    initGLFW();
-    initOpenGL();
-    std::shared_ptr<Mesh> sphere = Mesh::genSphere(32);
-    initGPUprogram();
-    sphere->init();
-    initCamera();
-    return sphere;
-}
 
 void clear()
 {
@@ -454,15 +507,17 @@ void update(const float currentTimeInSec)
 }
 
 int main(int argc, char **argv)
-{   
-    // mesh init
-    std::shared_ptr<Mesh> sphere = initSphere();
-    //init(); // Your initialization code (user interface, OpenGL states, scene with geometry, material, lights, etc)
+{  
+    init(); // Your initialization code (user interface, OpenGL states, scene with geometry, material, lights, etc)
     while (!glfwWindowShouldClose(g_window))
     {
         //update(static_cast<float>(glfwGetTime()));
         //render();
-        sphere->render();
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        for (auto mesh : meshes) {
+            mesh->render();
+        }
+   
         glfwSwapBuffers(g_window);
         glfwPollEvents();
     }
