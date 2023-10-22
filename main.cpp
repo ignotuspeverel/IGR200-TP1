@@ -22,6 +22,7 @@ const static float kSizeEarth = 0.5;
 const static float kSizeMoon = 0.25;
 const static float kRadOrbitEarth = 10;
 const static float kRadOrbitMoon = 2;
+const static float T = 5; // period of the earth in seconds
 
 // Window parameters
 GLFWwindow *g_window = nullptr;
@@ -80,6 +81,15 @@ Camera g_camera;
 
 class Mesh {
 public:
+    inline glm::vec3 testNoraml() {
+        glm::vec3 tn = glm::vec3(m_vertexNormals[0], m_vertexNormals[1], m_vertexNormals[2]);
+        std::cout << "original normal: (" << tn.x << ", " << tn.y << ", " << tn.z << ")" << std::endl;
+        const glm::mat4 viewMatrix = g_camera.computeViewMatrix();
+        const glm::mat4 modelMatrix = this->getModelMatrix();
+        glm::mat4 normalMat = glm::transpose(glm::inverse(glm::mat4(modelMatrix)));
+        tn = glm::vec3(normalMat * glm::vec4(tn, 1.0f));
+        return tn;
+    }
     inline float getRadius() const { return radius; }
     inline void setRadius(const float r) { 
         radius = r; 
@@ -106,6 +116,33 @@ public:
         lightPos = lp; 
         std::cout << "reset light position to (" << lp.x << ", " << lp.y << ", " << lp.z << ")" << std::endl;
     };
+    inline int IsLight() { return isLight; };
+    inline void setIsLight(const int l) { 
+        isLight = l; 
+        std::cout << "reset isLight to " << l << std::endl;
+    };
+    inline glm::vec3 getTranslation() { 
+        //glm::mat4 modelMatrix = this->getModelMatrix();
+        //return glm::vec3(modelMatrix[3][0], modelMatrix[3][1], modelMatrix[3][2]); 
+        return translation;
+    }  
+    inline void setTranslation(const glm::vec3 &t, const std::shared_ptr<Mesh> &parent = nullptr) {
+        if (parent != nullptr) { 
+            translation = parent->getTranslation() + t; }
+        else { translation = t; }
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        modelMatrix = glm::translate(modelMatrix, translation);
+        this->setModelMatrix(modelMatrix);
+    } 
+
+    inline glm::mat4 getModelMatrix() { return modelMat; }
+    inline void setModelMatrix(const glm::mat4 &m) { 
+        modelMat = m; 
+        glm::vec3 worldPosition = glm::vec3(modelMat[3][0], modelMat[3][1], modelMat[3][2]);
+
+    }
+
+    
     // load gpu geometry for the mesh, with this step we initialize the final mesh
     void init() {
         // vao of the mesh
@@ -135,12 +172,7 @@ public:
 
         glBindVertexArray(0); // deactivate the VAO for now, will be activated again when rendering
     }; // should properly set up the geometry buffer
-
-    void setposition(const glm::vec3 &p, const std::shared_ptr<Mesh> &parent = nullptr) {
-        if (parent != nullptr) { position = parent->getposition() + p; }
-        else { position = p; }
-    }
-    glm::vec3 getposition() { return position; }   
+ 
     // render the mesh
     void render() {
         const glm::mat4 viewMatrix = g_camera.computeViewMatrix();
@@ -148,15 +180,30 @@ public:
         const glm::vec3 camPosition = g_camera.getPosition();
         const glm::vec3 surfaceColor = this->getColor();
         const glm::vec3 lightPosition = this->getLightPos();
-        glm::mat4 modelMatrix = glm::mat4(1.0f);
-        modelMatrix = glm::translate(modelMatrix, this->getposition());
+        //const glm::vec3 worldPosition = this->getTranslation();
+        const int isLight = this->IsLight();
+        const glm::mat4 modelMatrix = this->getModelMatrix();
+        const glm::vec3 worldPosition = glm::vec3(modelMatrix[3][0], modelMatrix[3][1], modelMatrix[3][2]);
 
+        //std::cout << "worldPosition: (" << worldPosition.x << ", " << worldPosition.y << ", " << worldPosition.z << ")" << std::endl;
+        //std::cout << "lightPosition: (" << lightPosition.x << ", " << lightPosition.y << ", " << lightPosition.z << ")" << std::endl;
+        //std::cout << "camPosition: (" << camPosition.x << ", " << camPosition.y << ", " << camPosition.z << ")" << std::endl;
+        //glm::mat3 m = glm::mat3(modelMatrix);
+        //std::cout << "(" << m[0][0] <<", " << m[0][1] << ", " << m[0][2]  << ", " 
+        //                  << m[1][0] <<", " << m[1][1] << ", " << m[1][2] << ", " 
+        //                 << m[2][0] <<", " << m[2][1] << ", " << m[2][2] << ")"<< std::endl;
+        //glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+
+
+        //glUniform3fv(glGetUniformLocation(g_program, "normalMat"), 1, glm::value_ptr(normalMat));
         glUniformMatrix4fv(glGetUniformLocation(g_program, "modelMat"), 1, GL_FALSE, glm::value_ptr(modelMatrix));
         glUniformMatrix4fv(glGetUniformLocation(g_program, "viewMat"), 1, GL_FALSE, glm::value_ptr(viewMatrix)); 
         glUniformMatrix4fv(glGetUniformLocation(g_program, "projMat"), 1, GL_FALSE, glm::value_ptr(projMatrix));
         glUniform3f(glGetUniformLocation(g_program, "camPos"), camPosition[0], camPosition[1], camPosition[2]);
         glUniform3f(glGetUniformLocation(g_program, "surfaceColor"), surfaceColor[0], surfaceColor[1], surfaceColor[2]);
         glUniform3f(glGetUniformLocation(g_program, "lightPos"), lightPosition[0], lightPosition[1], lightPosition[2]);
+        glUniform3f(glGetUniformLocation(g_program, "worldPos"), worldPosition[0], worldPosition[1], worldPosition[2]);
+        glUniform1i(glGetUniformLocation(g_program, "isLight"), isLight);
 
         glBindVertexArray(m_vao);
         glDrawElements(GL_TRIANGLES, m_triangleIndices.size(), GL_UNSIGNED_INT, 0);
@@ -206,9 +253,12 @@ private:
     GLuint m_normalVbo = 0;
     GLuint m_ibo = 0;
     float radius = 1.f;
-    glm::vec3 position = glm::vec3(0.f, 0.f, 0.f);
+    int isLight = 0;
+    glm::vec3 translation = glm::vec3(0.f, 0.f, 0.f);
     glm::vec3 color = glm::vec3(0.f, 0.f, 0.f);
     glm::vec3 lightPos = glm::vec3(0.f, 0.f, 0.f);
+    glm::mat4 orbitRotation = glm::mat4(1.0f);
+    glm::mat4 modelMat = glm::mat4(1.0f);
 };
 std::vector<std::shared_ptr<Mesh>> meshes;
 
@@ -456,27 +506,27 @@ void init()
     initGPUprogram();
     Earth->init();
     Earth->setRadius(kSizeEarth);
-    Earth->setposition(glm::vec3(10.0f, 0.0f, 0.0f));
+    Earth->setTranslation(glm::vec3(10.0f, 0.0f, 0.0f));
     Earth->setColor(glm::vec3(0.0f, 1.0f, 0.0f));
     meshes.push_back(Earth);
     
     std::shared_ptr<Mesh> Moon = Mesh::genSphere(32);
     Moon->init();
     Moon->setRadius(kSizeMoon);
-    Moon->setposition(glm::vec3(2.0f, 0.0f, 0.0f), Earth);
+    Moon->setTranslation(glm::vec3(2.0f, 0.0f, 0.0f), Earth);
     Moon->setColor(glm::vec3(0.0f, 0.0f, 1.0f));
     meshes.push_back(Moon);
 
     std::shared_ptr<Mesh> Sun = Mesh::genSphere(32);
     Sun->init();
     Sun->setRadius(kSizeSun);
-    Sun->setposition(glm::vec3(0.0f, 0.0f, 0.0f));
+    Sun->setTranslation(glm::vec3(0.0f, 0.0f, 0.0f));
     Sun->setColor(glm::vec3(1.0f, 1.0f, 0.0f));
+    Sun->setIsLight(1);
     meshes.push_back(Sun);
 
     initCamera();
 }
-
 
 void clear()
 {
@@ -503,6 +553,36 @@ void render()
 // Update any accessible variable based on the current time
 void update(const float currentTimeInSec)
 {
+    float rotationAngleEarth = (currentTimeInSec / T) * 360.0f;
+    float orbitAngleEarth = (currentTimeInSec / (2*T)) * 360.0f;
+    float rotationAngleMoon = (currentTimeInSec / (T/2)) * 360.0f;
+    float orbitAngleMoon = rotationAngleMoon;
+    try {
+        std::shared_ptr<Mesh> Earth = meshes[0];
+        std::shared_ptr<Mesh> Moon = meshes[1];
+
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        glm::mat4 orbitRotationEarth = glm::rotate(glm::mat4(1.0f), glm::radians(orbitAngleEarth), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 tiltMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(-23.5f), glm::vec3(0.0f, 0.0f, 1.0f));
+        glm::vec4 originalYAxis = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f); 
+        glm::vec4 tiltedAxis = tiltMatrix * originalYAxis;
+
+        glm::mat4 earthRotate = glm::rotate(glm::mat4(1.0f), glm::radians(rotationAngleEarth), glm::vec3(tiltedAxis.x, tiltedAxis.y, tiltedAxis.z));
+        glm::mat4 modelMatrixEarth = orbitRotationEarth * glm::translate(modelMatrix, Earth->getTranslation());
+        Earth->setModelMatrix(modelMatrixEarth*earthRotate);
+        //glm::vec3 tn = Earth->testNoraml();
+        //std::cout << "normal: (" << tn.x << ", " << tn.y << ", " << tn.z << ")" << std::endl;
+        glm::mat4 moonRotate = glm::rotate(glm::mat4(1.0f), glm::radians(rotationAngleMoon), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 orbitRotationMoon = glm::rotate(glm::mat4(1.0f), glm::radians(orbitAngleMoon), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 modelMatrixMoon = modelMatrixEarth * orbitRotationMoon * glm::translate(glm::mat4(1.0f), glm::vec3(2.0, 0.0, 0.0)) * moonRotate;
+        Moon->setModelMatrix(modelMatrixMoon);
+        //Earth->setOrbitRotation(glm::rotate(glm::mat4(1.0f), glm::radians(orbitAngleEarth), glm::vec3(0.0f, 1.0f, 0.0f)));
+        //Moon->setOrbitRotation(glm::rotate(glm::mat4(1.0f), glm::radians(orbitAngleMoon), glm::vec3(0.0f, 1.0f, 0.0f)));
+    }
+    catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+
+    }
     // std::cout << currentTimeInSec << std::endl;
 }
 
@@ -511,7 +591,7 @@ int main(int argc, char **argv)
     init(); // Your initialization code (user interface, OpenGL states, scene with geometry, material, lights, etc)
     while (!glfwWindowShouldClose(g_window))
     {
-        //update(static_cast<float>(glfwGetTime()));
+        update(static_cast<float>(glfwGetTime()));
         //render();
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         for (auto mesh : meshes) {
